@@ -7,6 +7,7 @@ import morgan from "morgan";
 import connectDB from "./utils/db.js";
 import userRoutes from "./routes/Auth.router.js";
 import productRoutes from "./routes/Product.router.js";
+import cartRoutes from "./routes/Cart.router.js";
 
 // Configure dotenv
 dotenv.config({ path: "./.env" });
@@ -52,6 +53,7 @@ app.use(morgan("dev"));
 // Routes
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/products", productRoutes);
+app.use("/api/v1/cart", cartRoutes);
 
 // Test route
 app.get("/", (req, res) => {
