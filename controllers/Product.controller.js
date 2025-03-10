@@ -1,218 +1,162 @@
-const { default: slugify } = require("slugify");
-const Product = require("../models/product.model.js");
-const fs = require("fs");
-const Order = require("../models/order.model.js");
-
-// payment gateway
-const gateway = new braintree.BraintreeGateway({
-  environment: braintree.Environment.Sandbox,
-  merchantId: process.env.BRAINTREE_MERCHANT_ID,
-  publicKey: process.env.BRAINTREE_PUBLIC_KEY,
-  privateKey: process.env.BRAINTREE_PRIVATE_KEY,
-});
-
-// Create Product
-exports.createProduct = async (req, res) => {
-  try {
-    const { name, description, price, category, quantity, shipping } =
-      req.fields;
-    const { image } = req.files;
-    if (
-      !name ||
-      !description ||
-      !price ||
-      !category ||
-      !quantity ||
-      !shipping
-    ) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-    if (image && image.size > 1000000) {
-      return res.status(400).json({ message: "Image should be less than 1mb" });
-    }
-    const products = new Product({
-      ...req.fields,
-      slug: slugify(name),
-    });
-    if (image) {
-      products.image.data = fs.readFileSync(image.path);
-      products.image.contentType = image.type;
-    }
-    await products.save();
-    return res
-      .status(201)
-      .json({ success: true, message: "Product created", products });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not create Product" });
-  }
-};
+import { redis } from "../utils/redis.js";
+import Product from "../models/product.model.js";
+import cloudinary from "../utils/cloudinaryConnect.js";
 
 // Get All Products
-exports.getAllProducts = async (req, res) => {
+export const getProducts = async (req, res) => {
   try {
-    const products = await Product.find({})
-      .select("-image")
-      .populate("category")
-      .limit(12)
-      .sort({ createdAt: -1 });
-    return res.status(200).json({
-      success: true,
-      total: products.length,
-      products,
-      message: "All products",
-    });
+    const products = await Product.find({});
+    res.status(200).json({ products });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not get products" });
+    console.log("Error in getProducts: ", error.message);
+    res.status(500).json({ message: error.message });
   }
 };
 
-// get single product
-exports.getSingleProduct = async (req, res) => {
+// GET Featured Products
+export const getFeaturedProducts = async (req, res) => {
   try {
-    const product = await Product.findOne({ slug: req.params.slug })
-      .populate("category")
-      .select("-image");
-    return res.status(200).send({ success: true, message: "Product", product });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not get product" });
-  }
-};
-
-// get photo
-exports.getPhoto = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.pid).select("image");
-    if (product.image.data) {
-      res.set("Content-Type", product.image.contentType);
-      return res.status(200).send(product.image.data);
+    let featuredProducts = await redis.get("featured_products");
+    if (featuredProducts) {
+      return res.json(JSON.parse(featuredProducts));
     }
+    // if not in redis, fetch from mongodb
+    // lean() is used to convert mongoose document into plain javascript object
+    featuredProducts = await Product.find({ isFeatured: true }).lean();
+    if (!featuredProducts) {
+      return res.status(404).json({ message: "No featured products found" });
+    }
+    // store in redis
+    await redis.set("featured_products", JSON.stringify(featuredProducts));
+    res.status(200).json({ featuredProducts });
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not get photo" });
+    console.log("Error in getFeaturedProducts: ", error.message);
+    res.status(500).json({ message: error.message, error: error.message });
   }
 };
 
-// delete product
-exports.deleteProduct = async (req, res) => {
+// Create Product
+export const createProduct = async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.pid);
-    return res.status(200).json({ success: true, message: "Product deleted" });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not delete product" });
-  }
-};
+    const { name, description, price, image, category } = req.body;
 
-// update product
-exports.updateProduct = async (req, res) => {
-  try {
-    const { name, description, price, category, quantity, shipping } =
-      req.fields;
-    const { image } = req.files;
-    if (
-      !name ||
-      !description ||
-      !price ||
-      !category ||
-      !quantity ||
-      !shipping
-    ) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
-    if (image && image.size > 1000000) {
-      return res.status(400).json({ message: "Image should be less than 1mb" });
-    }
-    const product = await Product.findByIdAndUpdate(
-      req.params.pid,
-      {
-        ...req.fields,
-        slug: slugify(name),
-      },
-      { new: true }
-    );
+    let cloudinaryResponse = null;
+
     if (image) {
-      product.image.data = fs.readFileSync(image.path);
-      product.image.contentType = image.type;
+      cloudinaryResponse = await cloudinary.uploader.upload(image, {
+        folder: "products",
+      });
     }
-    await product.save();
-    return res
-      .status(200)
-      .json({ success: true, message: "Product updated", product });
+
+    const product = await Product.create({
+      name,
+      description,
+      price,
+      image: cloudinaryResponse?.secure_url
+        ? cloudinaryResponse.secure_url
+        : "",
+      category,
+    });
+
+    res.status(201).json(product);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ success: false, message: "Can not update product" });
+    console.log("Error in createProduct controller", error.message);
+    res.status(500).json({ message: "error creating a product", error: error.message });
   }
 };
 
-// filter product
-exports.filterProduct = async (req, res) => {
+// Delete Product
+export const deleteProduct = async (req, res) => {
   try {
-    const { checked, radio } = req.body;
-    let args = {};
-    if (checked.length > 0) {
-      args.category = checked;
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
     }
-    if (radio.length) args.price = { $gte: radio[0], $lte: radio[1] };
-    const products = await Product.find(args);
-    res.status(200).send({
-      success: true,
-      products,
-    });
+
+    if (product.image) {
+      const publicId = product.image.split("/").pop().split(".")[0];
+      try {
+        // delete from cloudinary
+        await cloudinary.uploader.destroy(`products/${publicId}`);
+        console.log("deleted image from cloduinary");
+      } catch (error) {
+        console.log("error deleting image from cloduinary", error);
+      }
+    }
+
+    await Product.findByIdAndDelete(req.params.id);
+
+    res.json({ message: "Product deleted successfully" });
   } catch (error) {
-    res.status(500).send({
-      success: false,
-      error,
-    });
+    console.log("Error in deleteProduct controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// search product
-exports.searchProduct = async (req, res) => {
+// Get Recommended Products
+export const getRecommendedProducts = async (req, res) => {
   try {
-    const { keyword } = req.params;
-    const products = await Product.find({
-      $or: [
-        { name: { $regex: keyword, $options: "i" } },
-        { description: { $regex: keyword, $options: "i" } },
-      ],
-    });
-    res.status(200).send({
-      success: true,
-      products,
-    });
+    const products = await Product.aggregate([
+      {
+        $sample: { size: 4 },
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          description: 1,
+          image: 1,
+          price: 1,
+        },
+      },
+    ]);
+
+    res.json(products);
   } catch (error) {
-    res.status(500).send({
-      success: false,
-      error,
-    });
+    console.log("Error in getRecommendedProducts controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
-// get similar Products
-exports.similarProducts = async (req, res) => {
+// Get Categories
+export const getProductsByCategory = async (req, res) => {
+  const { category } = req.params;
   try {
-    const { pid, cid } = req.params;
-    const products = await Product.find({
-      category: cid,
-      _id: { $ne: pid },
-    })
-      .limit(4)
-      .select("-image")
-      .populate("category");
-    res.status(200).send({
-      success: true,
-      message: "Similar Product fetched successfully",
-      products,
-    });
+    const products = await Product.find({ category });
+    res.json({ products });
   } catch (error) {
-    res.status(500).send({
-      success: false,
-      message: "Error in fetching similar Products",
-      error,
-    });
+    console.log("Error in getProductsByCategory controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
+// Change Featured Product
+export const toggleFeaturedProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (product) {
+      product.isFeatured = !product.isFeatured;
+      const updatedProduct = await product.save();
+      await updateFeaturedProductsCache();
+      res.json(updatedProduct);
+    } else {
+      res.status(404).json({ message: "Product not found" });
+    }
+  } catch (error) {
+    console.log("Error in toggleFeaturedProduct controller", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+// Update Featured Product in Redis Cache
+async function updateFeaturedProductsCache() {
+  try {
+    // The lean() method  is used to return plain JavaScript objects instead of full Mongoose documents. This can significantly improve performance
+
+    const featuredProducts = await Product.find({ isFeatured: true }).lean();
+    await redis.set("featured_products", JSON.stringify(featuredProducts));
+  } catch (error) {
+    console.log("error in update cache function");
+  }
+}

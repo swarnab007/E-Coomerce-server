@@ -1,73 +1,30 @@
-const express = require("express");
-const formidable = require("express-formidable");
-const {
+import express from "express";
+import {
   createProduct,
-  getAllProducts,
-  getSingleProduct,
-  updateProduct,
   deleteProduct,
-  getPhoto,
-  filterProduct,
-  searchProduct,
-  similarProducts,
-  generateToken,
-  processPayment,
-} = require("../controllers/Product.controller");
-const {
-  requiresignIn,
-  adminAccess,
-} = require("../middlewares/Auth.middleware");
+  getFeaturedProducts,
+  getProducts,
+  getProductsByCategory,
+  getRecommendedProducts,
+  toggleFeaturedProduct,
+} from "../controllers/Product.controller.js";
+import { adminAccess, protectedRoute } from "../middlewares/Auth.middleware.js";
 
 const router = express.Router();
 
-// create product
-router.post(
-  "/create-product",
-  requiresignIn,
-  adminAccess,
-  formidable(),
-  createProduct
-);
+// GET : All Products
+router.get("/", protectedRoute, adminAccess, getProducts);
+// GET : Featured Products
+router.get("/featured", getFeaturedProducts);
+// GET : CATEGORY Products
+router.get("/category/:category", getProductsByCategory);
+// GET : Recommended Products
+router.get("/recommended", getRecommendedProducts);
+// POST : Create a Product
+router.post("/", protectedRoute, adminAccess, createProduct);
+// PATCH : Toggle Featured Product
+router.patch("/:id", protectedRoute, adminAccess, toggleFeaturedProduct);
+// DELETE : Delete a Product
+router.delete("/:id", protectedRoute, adminAccess, deleteProduct);
 
-// get all products
-router.get("/all-products", getAllProducts);
-
-// get single product
-router.get("/product/:slug", getSingleProduct);
-
-// get photo
-router.get("/product/photo/:pid", getPhoto);
-
-// delete product
-router.delete(
-  "/delete-product/:pid",
-  requiresignIn,
-  adminAccess,
-  deleteProduct
-);
-
-// update product
-router.put(
-  "/update-product/:pid",
-  requiresignIn,
-  adminAccess,
-  formidable(),
-  updateProduct
-);
-
-// filter product
-router.post("/filter-product", filterProduct);
-
-// search product
-router.get("/search-product/:keyword", searchProduct);
-
-// get similar products
-router.get("/similar-products/:pid/:cid", similarProducts);
-
-// get braintree token
-router.get("/braintree-token", requiresignIn, generateToken);
-
-// make payment
-router.post("/braintree/payment", requiresignIn, processPayment);
-
-module.exports = router;
+export default router;

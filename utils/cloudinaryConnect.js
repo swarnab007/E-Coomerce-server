@@ -1,17 +1,12 @@
-const cloudinary = require("cloudinary").v2;
+import { v2 as cloudinary } from "cloudinary";
+import dotenv from "dotenv";
 
-const cloudinaryconnect = async () => {
-  // console.log(process.env.DB_URL);
-  try {
-    cloudinary.config({
-      //!    ########   Configuring the Cloudinary to Upload MEDIA ########
-      cloud_name: "dsxlusxr8",
-      api_key: "267717691171762",
-      api_secret: "F4qslrONFseLUAiWqK8TVMWMdgQ",
-    });
-  } catch (error) {
-    console.log(error);
-  }
-};
+dotenv.config("./.env");
 
-module.exports = cloudinaryconnect;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+export default cloudinary;

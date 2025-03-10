@@ -5,6 +5,7 @@ import {
   logout,
   refreshToken,
   getProfile,
+  updateProfile,
 } from "../controllers/Auth.controller.js";
 import { protectedRoute } from "../middlewares/Auth.middleware.js";
 
@@ -18,7 +19,9 @@ router.post("/login", login);
 router.post("/logout", logout);
 // POST : Refresh Token
 router.post("/refresh-token", refreshToken);
+// POST : Update Profile
+router.post("/update-profile", protectedRoute, updateProfile);
 // GET : Profile
 router.get("/profile", protectedRoute, getProfile);
 
-export default router
+export default router;
