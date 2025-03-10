@@ -4,9 +4,9 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 // import rateLimit from "express-rate-limit";
-import connectDB from "./utils/db.js"
+import connectDB from "./utils/db.js";
 import userRoutes from "./routes/Auth.router.js";
-// import productRoutes from "./routes/Product.router.js";
+import productRoutes from "./routes/Product.router.js";
 
 // Configure dotenv
 dotenv.config({ path: "./.env" });
@@ -29,7 +29,14 @@ const app = express();
 const corsOptions = {
   origin: ["http://localhost:5173", "https://watchstore-e-commerce.vercel.app"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization", "token"],
+  allowedHeaders: [
+    "Origin",
+    "X-Requested-With",
+    "Content-Type",
+    "Accept",
+    "Authorization",
+    "token",
+  ],
   credentials: true,
 };
 app.use(cors(corsOptions));
@@ -44,6 +51,7 @@ app.use(morgan("dev"));
 
 // Routes
 app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/products", productRoutes);
 
 // Test route
 app.get("/", (req, res) => {
