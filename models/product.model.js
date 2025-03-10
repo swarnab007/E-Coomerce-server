@@ -6,32 +6,23 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    slug: {
-      type: String,
-      lowercase: true,
-      required: true,
-    },
     description: {
       type: String,
     },
     price: {
       type: Number,
       required: true,
+      min: 0,
     },
     category: {
-      type: mongoose.ObjectId,
-      ref: "Category",
+      type: String,
       required: true,
     },
     image: {
-      data: Buffer,
-      contentType: String
+      type: String,
+      required: [true, "Please upload an image"],
     },
-    quantity: {
-      type: Number,
-      required: true,
-    },
-    shipping: {
+    isFeatured: {
       type: Boolean,
       default: false,
     },

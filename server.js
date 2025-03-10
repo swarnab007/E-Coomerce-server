@@ -1,55 +1,57 @@
-const express = require("express");
-const dotenv = require("dotenv");
-const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const morgan = require("morgan");
-const connectDB = require("./config/database.js");
-const userRoutes = require("./routes/Auth.router.js");
-const categoryRoutes = require("./routes/Category.router.js");
-const productRoutes = require("./routes/Product.router.js");
-const bodyParser = require("body-parser");
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import morgan from "morgan";
+// import rateLimit from "express-rate-limit";
+import connectDB from "./utils/db.js"
+import userRoutes from "./routes/Auth.router.js";
+// import productRoutes from "./routes/Product.router.js";
 
-// congfiguring dotenv
+// Configure dotenv
 dotenv.config({ path: "./.env" });
+
 // Database connection
 connectDB();
 
-// express server
+// Express server
 const app = express();
 
-// cors
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin','https://watchstore-e-commerce.vercel.app' );
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization,token');
-  res.header('Access-Control-Allow-Credentials', 'true'); // Allow credentials
+// Rate limiting
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // Limit each IP to 100 requests per windowMs
+//   message: "Too many requests from this IP, please try again after 15 minutes",
+// });
+// app.use(limiter);
 
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
-app.use(bodyParser.json({ limit: "50mb" })); // Increase to 50mb or any value as needed
-app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
+// CORS configuration
+const corsOptions = {
+  origin: ["http://localhost:5173", "https://watchstore-e-commerce.vercel.app"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization", "token"],
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
-// middlewares
-app.use(express.json());
+// Body parser
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(cookieParser());
+
+// Logging
 app.use(morgan("dev"));
 
-// defining routes for users
+// Routes
 app.use("/api/v1/users", userRoutes);
-app.use("/api/v1/categories", categoryRoutes);
-app.use("/api/v1/products", productRoutes);
 
-const PORT = process.env.PORT || 3000;
-
-// check server
+// Test route
 app.get("/", (req, res) => {
   res.send("<h1>Working</h1>");
 });
 
+// Start server
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running in ${process.env.DEV_MODE} on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });

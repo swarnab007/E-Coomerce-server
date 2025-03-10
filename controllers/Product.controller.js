@@ -1,7 +1,6 @@
 const { default: slugify } = require("slugify");
 const Product = require("../models/product.model.js");
 const fs = require("fs");
-const braintree = require("braintree");
 const Order = require("../models/order.model.js");
 
 // payment gateway
@@ -217,73 +216,3 @@ exports.similarProducts = async (req, res) => {
   }
 };
 
-// payment gateway
-// generate token
-exports.generateToken = (req, res) => {
-  try {
-    gateway.clientToken.generate({}, (err, response) => {
-      if (err) return res.status(500).send(err);
-      else return res.send(response);
-    });
-  } catch (error) {
-    console.log(error);
-  }
-};
-
-// process payment
-exports.processPayment = async (req, res) => {
-  const { nonce, cart } = req.body;
-  let totalPrice = 0;
-
-  try {
-    // Calculate total price
-    totalPrice = cart.reduce(
-      (total, item) => total + item.productId.price * item.quantity,
-      0
-    );
-
-    // Sale transaction
-    const transactionResult = await gateway.transaction.sale({
-      amount: totalPrice.toFixed(2),
-      paymentMethodNonce: nonce,
-      options: {
-        submitForSettlement: true,
-      },
-    });
-
-    if (transactionResult.success) {
-      // Extract product IDs from cart
-      const productIds = cart.map((item) => item.productId._id);
-
-      // Create order
-      const order = new Order({
-        products: productIds, // Use extracted product IDs
-        purchaser: req.user.id,
-        payment: transactionResult,
-      });
-
-      // Save order
-      const savedOrder = await order.save();
-
-      return res.status(200).send({
-        success: true,
-        message: "Payment successful",
-        order: savedOrder,
-      });
-    } else {
-      console.error("Payment result error:", transactionResult);
-      return res.status(500).send({
-        success: false,
-        message: "Payment was not successful",
-        result: transactionResult,
-      });
-    }
-  } catch (error) {
-    console.error("Payment error:", error);
-    return res.status(500).send({
-      success: false,
-      message: "Payment processing failed",
-      error: error.message,
-    });
-  }
-};

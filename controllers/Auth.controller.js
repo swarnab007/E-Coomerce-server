@@ -1,10 +1,45 @@
-const User = require("../models/user.model.js");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const Product = require("../models/product.model.js");
-const Order = require("../models/order.model.js");
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import User from "../models/user.model.js";
+import { redis } from "../utils/redis.js";
 
-exports.register = async (req, res) => {
+const generateTokens = (userId) => {
+  const accessToken = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: "15m",
+  });
+  const refreshToken = jwt.sign({ userId }, process.env.REFRESH_TOKEN_SECRET, {
+    expiresIn: "7d",
+  });
+  return { accessToken, refreshToken };
+};
+
+const storeRefreshToken = async (userId, refreshToken) => {
+  await redis.set(
+    `refresh_token:${userId}`,
+    refreshToken,
+    "EX",
+    7 * 24 * 60 * 60
+  );
+};
+
+const setCookies = (res, accessToken, refreshToken) => {
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true, // prevent XSS attacks, cross site scripting attack
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+    maxAge: 15 * 60 * 1000, // 15 minutes
+  });
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true, // prevent XSS attacks, cross site scripting attack
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict", // prevents CSRF attack, cross-site request forgery attack
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+};
+
+export const register = async (req, res) => {
+  console.log(req.body);
+
   try {
     const { name, email, password, phoneNo, address } = req.body;
     if (!name || !email || !password || !phoneNo || !address) {
@@ -31,6 +66,14 @@ exports.register = async (req, res) => {
       phoneNo,
       address,
     });
+
+    // authenticate
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    await storeRefreshToken(user._id, refreshToken);
+
+    // set cookies
+    setCookies(res, accessToken, refreshToken);
+
     // send success response
     res
       .status(201)
@@ -38,11 +81,13 @@ exports.register = async (req, res) => {
     console.log(user);
   } catch (error) {
     console.log(error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    res
+      .status(500)
+      .json({ success: false, message: "Error in Registering user" });
   }
 };
 
-exports.login = async (req, res) => {
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -65,52 +110,30 @@ exports.login = async (req, res) => {
         .json({ success: false, message: "Invalid credentials" });
     }
     // create token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
-    user.token = token;
-    // Set cookie for token and return success response
-    const options = {
-      expires: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      httpOnly: true,
-    };
-    // send cookie in response
+    const { accessToken, refreshToken } = generateTokens(user._id);
+    await storeRefreshToken(user._id, refreshToken);
+    setCookies(res, accessToken, refreshToken);
 
-    res
-      .cookie("token", token, options)
-      .status(200)
-      .json({
-        success: true,
-        message: `Welcome back ${user.name}`,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phoneNo: user.phoneNo,
-          address: user.address,
-          role: user.role,
-          token: user.token,
-        },
-      });
+    res.status(200).json({
+      success: true,
+      message: `Welcome back ${user.name}`,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNo: user.phoneNo,
+        address: user.address,
+        role: user.role,
+      },
+    });
   } catch (error) {
     console.log(error);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
-// test controller
-exports.test = (req, res) => {
-  try {
-    console.log("test route");
-    res.send("Test route is working fine!");
-  } catch (error) {
-    console.log(error);
-    res.send({ error });
-  }
-};
-
 // update user profile
-exports.updateProfile = async (req, res) => {
+export const updateProfile = async (req, res) => {
   try {
     const { name, email, password, phoneNo, address } = req.body;
     const user = await User.findById(req.user.id);
@@ -143,173 +166,65 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-exports.addToCart = async (req, res) => {
+// logout
+export const logout = async (req, res) => {
   try {
-    const { slug, quantity } = req.body;
-    // Assuming you have middleware to authenticate and attach the user to the request
-
-    const user = await User.findById(req.user.id);
-    console.log(user);
-    console.log("add to cart backend");
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const refreshToken = req.cookies.refreshToken;
+    if (refreshToken) {
+      const decoded = jwt.verify(
+        refreshToken,
+        process.env.REFRESH_TOKEN_SECRET
+      );
+      await redis.del(`refresh_token:${decoded.userId}`);
     }
-
-    const product = await Product.findOne({ slug });
-    if (!product) {
-      return res.status(404).json({ message: "Product not found" });
-    }
-
-    const cartItem = user.cart.find(
-      (item) => item.productId.toString() === product._id.toString()
-    );
-    if (cartItem) {
-      cartItem.quantity += quantity;
-    } else {
-      user.cart.push({ productId: product._id, quantity });
-    }
-
-    await user.save();
-    res
-      .status(200)
-      .json({ message: "Product added to cart successfully", cart: user.cart });
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+    res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    console.log(error);
+    res.status(500).json({ success: false, message: "Error in Logging out" });
   }
 };
 
-// Remove from cart
-exports.removeFromCart = async (req, res) => {
-  const { productId } = req.body;
-
+// refresh token
+export const refreshToken = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "No refresh token provided" });
     }
 
-    const cartIndex = user.cart.findIndex(
-      (item) => item.productId.toString() === productId.toString()
+    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+    const storedToken = await redis.get(`refresh_token:${decoded.userId}`);
+
+    if (storedToken !== refreshToken) {
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    const accessToken = jwt.sign(
+      { userId: decoded.userId },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "15m" }
     );
 
-    if (cartIndex === -1) {
-      return res.status(404).json({ message: "Product not found in cart" });
-    }
-
-    user.cart.splice(cartIndex, 1);
-    await user.save();
-
-    res.status(200).json({
-      message: "Product removed from cart successfully",
-      cart: user.cart,
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 15 * 60 * 1000,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    console.log(error);
+    res.status(500).json({ success: false, message: "" });
   }
 };
 
-// Get cart details
-exports.getCartDetails = async (req, res) => {
+// get user profile
+export const getProfile = async (req, res) => {
   try {
-    // Assuming you have middleware to authenticate and attach the user to the request
-
-    const user = await User.findById(req.user.id).populate("cart.productId");
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json({ cart: user.cart });
+    res.json(req.user);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-// delete cart items after payment
-exports.deleteCartItems = async (req, res) => {
-  const userId = req.user.id;
-
-  try {
-    // Find the user by ID
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
-
-    // Clear the cart items
-    user.cart = [];
-
-    // Save the updated user data
-    await user.save();
-
-    return res.status(200).json({ success: true, message: "No items in cart" });
-  } catch (error) {
-    console.error("Error deleting cart items:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to delete cart items", error });
-  }
-};
-
-exports.getOrders = async (req, res) => {
-  try {
-    const orders = await Order.find({ purchaser: req.user.id })
-      .populate({
-        path: "products", // Directly populate the products array
-        select: "name description price image", // Select the fields you want
-      })
-      .populate("purchaser", "name");
-
-    console.log("Orders being sent:", orders); // Log orders being sent
-    res.status(200).send({ success: true, orders });
-  } catch (error) {
-    console.error("Error fetching orders:", error);
-    res.status(500).json({ message: "Failed to get orders" });
-  }
-};
-
-// admin orders
-// get all orders
-exports.getAllOrders = async (req, res) => {
-  try {
-    const orders = await Order.find({})
-      .populate({
-        path: "products",
-        select: "name description price image",
-      })
-      .populate("purchaser", "name")
-      .sort({ createdAt: -1 });
-
-    res.status(200).send({ success: true, orders });
-  } catch (error) {
-    console.error("Error fetching orders:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to get orders", error });
-  }
-};
-
-// change status of order
-exports.changeOrderStatus = async (req, res) => {
-  const { orderId } = req.params;
-  const { status } = req.body;
-  try {
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { status },
-      { new: true }
-    );
-    res
-      .status(200)
-      .json({ success: true, message: "Status changed successfully", order });
-  } catch (error) {
-    res
-      .status(500)
-      .json({ success: false, message: "Failed to update status", error });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };

@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
@@ -10,12 +10,14 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Please enter your email"],
+      lowercase: true,
       trim: true,
       unique: true,
     },
     password: {
       type: String,
       required: [true, "Please enter your password"],
+      minLength: [6, "Password must be at least 6 characters long"],
     },
     phoneNo: {
       type: String,
@@ -25,16 +27,14 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, "Please enter your address"],
     },
-    token: {
-      type: String,
-    },
     role: {
-      type: Number,
-      default: 0, // 0 = user, 1 = admin
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
     },
     cart: [
       {
-        productId: {
+        product: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Product",
         },
@@ -50,4 +50,5 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("User", userSchema);
+const User = mongoose.model("User", userSchema);
+export default User;

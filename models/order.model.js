@@ -1,27 +1,41 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-const orderSchema = new mongoose.Schema(
-  {
-    products: [
-      {
-        type: mongoose.ObjectId,
-        ref: "Product",
-      },
-    ],
-    purchaser: {
-      type: mongoose.ObjectId,
-      ref: "User",
-    },
-    payment: {},
-    status: {
-      type: String,
-      default: "Order Placed",
-      enum: ["Order Placed", "Processing", "Shipped", "Delivered", "Cancelled"],
-    },
+const orderSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
   },
-  {
-    timestamps: true,
-  }
-);
+  products: [
+    {
+      product: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+        required: true,
+      },
+      quantity: {
+        type: Number,
+        required: true,
+        min: 1,
+      },
+      price: {
+        type: Number,
+        required: true,
+        min: 0,
+      },
+    },
+  ],
 
-module.exports = mongoose.model("Order", orderSchema);
+  totalAmount: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  stripeSessionID: {
+    type: String,
+    unique: true,
+  },
+});
+
+const Order = mongoose.model("Order", orderSchema);
+export default Order;
