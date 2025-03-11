@@ -4,10 +4,12 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 // import rateLimit from "express-rate-limit";
-import connectDB from "./utils/db.js";
+import connectDB from "./lib/db.js";
 import userRoutes from "./routes/Auth.router.js";
 import productRoutes from "./routes/Product.router.js";
 import cartRoutes from "./routes/Cart.router.js";
+import AnalyticsRoutes from "./routes/Analytics.router.js";
+import PaymentRoutes from "./routes/Payment.router.js";
 
 // Configure dotenv
 dotenv.config({ path: "./.env" });
@@ -54,6 +56,8 @@ app.use(morgan("dev"));
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/cart", cartRoutes);
+app.use("/api/v1/analytics", AnalyticsRoutes);
+app.use("/api/v1/payment", PaymentRoutes);
 
 // Test route
 app.get("/", (req, res) => {
